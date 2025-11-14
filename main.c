@@ -11,12 +11,17 @@
 static struct termios orig_termios;
 static int input_mode_inited = 0;
 
+/* forward declare screen restore so restore_input_mode can call it */
+void restore_screen(void);
+
 void restore_input_mode(void)
 {
     if (!input_mode_inited) return;
     /* best-effort restore; ignore errors */
     tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
     input_mode_inited = 0;
+    /* also restore screen (show cursor) */
+    restore_screen();
 }
 
 void init_input_mode(void)
@@ -97,6 +102,10 @@ void food_generate(status* game)
 
 void map_print()
 {
+    /* move cursor to top-left so we overwrite previous frame (in-place refresh) */
+    const char *home = "\x1b[H"; /* ANSI: cursor home */
+    write(STDOUT_FILENO, home, 3);
+
     for(int i=0;i<12;i++)
     {
         for(int j=0;j<12;j++)
@@ -106,6 +115,29 @@ void map_print()
         printf("\n");
 
     }
+}
+
+/* initialize screen: clear and hide cursor */
+void init_screen(void)
+{
+    /* clear screen */
+    const char *clear = "\x1b[2J"; /* ANSI clear screen */
+    write(STDOUT_FILENO, clear, 4);
+    /* move to home and hide cursor */
+    const char *home_hide = "\x1b[H\x1b[?25l";
+    write(STDOUT_FILENO, home_hide, 8);
+    fflush(stdout);
+}
+
+/* restore screen state: show cursor and move to next line */
+void restore_screen(void)
+{
+    const char *show = "\x1b[?25h"; /* show cursor */
+    write(STDOUT_FILENO, show, 6);
+    /* move cursor down to avoid overwriting prompt */
+    const char *down = "\n";
+    write(STDOUT_FILENO, down, 1);
+    fflush(stdout);
 }
 
 void map_init()
@@ -268,8 +300,7 @@ void update(status* game)
     //update the map
     map_generate(game);
     map_print();
-}
-
+    }
 
 int main()
 {
@@ -300,6 +331,8 @@ int main()
     map_print();
     /* set terminal to non-canonical mode so we can read keys without blocking */
     init_input_mode();
+    /* initialize screen (clear and hide cursor) for in-place refresh */
+    init_screen();
 
     /* register signal handlers to restore terminal on interruption */
     struct sigaction sa;
