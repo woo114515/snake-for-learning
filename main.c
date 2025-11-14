@@ -247,6 +247,28 @@ void update(status* game)
         eat_food=1;
     }
 
+    //detect self-collision: if new head collides with any body segment, die.
+    //If not eating food, moving into the current tail position is allowed (tail will move away).
+    snake* cur_col = game->head;
+    while(cur_col != NULL)
+    {
+        if(cur_col->x == x && cur_col->y == y)
+        {
+            // if this is the tail and we are not growing, allow it
+            if(eat_food == 0 && cur_col == game->tail)
+            {
+                // allowed — tail will be removed
+            }
+            else
+            {
+                // collision with body
+                game->flag = 0;
+                return; // die immediately
+            }
+        }
+        cur_col = cur_col->next;
+    }
+
     //detect alive (valid playable coords are 1..10)
     int alive=1;
     if(x>=WIDTH-1 || x<=0)
