@@ -1,8 +1,48 @@
 #define _POSIX_C_SOURCE 199309L
 #include<stdio.h>
 #include<unistd.h>
+#include<termios.h>
+#include<sys/select.h>
+#include<signal.h>
 #include<stdlib.h>
 #include<time.h>
+
+/* terminal input handling: switch to non-canonical, no-echo mode */
+static struct termios orig_termios;
+static int input_mode_inited = 0;
+
+void restore_input_mode(void)
+{
+    if (!input_mode_inited) return;
+    /* best-effort restore; ignore errors */
+    tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
+    input_mode_inited = 0;
+}
+
+void init_input_mode(void)
+{
+    struct termios newt;
+    if (tcgetattr(STDIN_FILENO, &orig_termios) == -1) return;
+    newt = orig_termios;
+    /* disable canonical mode and echo */
+    newt.c_lflag &= ~(ICANON | ECHO);
+    /* return each byte, no timeout */
+    newt.c_cc[VMIN] = 0;
+    newt.c_cc[VTIME] = 0;
+    if (tcsetattr(STDIN_FILENO, TCSANOW, &newt) == 0) {
+        input_mode_inited = 1;
+        /* ensure we restore on normal exit */
+        atexit(restore_input_mode);
+    }
+}
+
+/* Signal handler: restore terminal then exit immediately */
+void handle_signal(int sig)
+{
+    restore_input_mode();
+    /* use _exit to avoid unsafe behaviour in signal handler */
+    _exit(128 + sig);
+}
 
 //data
 char map[12][12];
@@ -98,15 +138,46 @@ void map_generate(status* game)
     map[game->food_x][game->food_y]='f';
 }
 
+
 void update(status* game)
 {
     int x=game->head->x;
     int y=game->head->y;   
     
-    /* read requested direction (blocking); keep previous to prevent immediate reverse */
+    /* read requested direction (non-blocking); keep previous to prevent immediate reverse */
     char prev_dir = game->direction;
-    int c = getchar();
-    if (c != EOF) game->direction = (char)c;
+
+    /* poll stdin for available input */
+    int c = -1;
+    fd_set rfds;
+    struct timeval tv;
+    FD_ZERO(&rfds);
+    FD_SET(STDIN_FILENO, &rfds);
+    tv.tv_sec = 0;
+    tv.tv_usec = 0; /* no wait */
+    if (select(STDIN_FILENO+1, &rfds, NULL, NULL, &tv) > 0) {
+        char ch;
+        ssize_t r = read(STDIN_FILENO, &ch, 1);
+        if (r > 0) {
+            /* handle ANSI arrow sequences: ESC [ A/B/C/D */
+            if (ch == '\x1b') {
+                /* try to read two more bytes if available */
+                char seq[2] = {0,0};
+                ssize_t r1 = read(STDIN_FILENO, &seq[0], 1);
+                ssize_t r2 = read(STDIN_FILENO, &seq[1], 1);
+                if (r1 > 0 && r2 > 0 && seq[0] == '[') {
+                    if (seq[1] == 'A') c = 'w';
+                    else if (seq[1] == 'B') c = 's';
+                    else if (seq[1] == 'C') c = 'd';
+                    else if (seq[1] == 'D') c = 'a';
+                }
+            } else {
+                c = (int)ch;
+            }
+        }
+    }
+
+    if (c != -1) game->direction = (char)c;
 
     //move the snake
     switch (game->direction) {
@@ -173,16 +244,20 @@ void update(status* game)
     game->head=new_head;
     if(eat_food==0)
     {
-        /* remove last tail node */
-        if (game->head->next == NULL) {
-            /* single element, keep it */
+        //remove last tail node 
+        if (game->head->next == NULL) 
+        {
+            //single element, keep it 
             game->tail = game->head;
-        } else {
+        } 
+        else 
+        {
             snake* cur = game->head;
-            while(cur->next && cur->next->next) {
+            while(cur->next && cur->next->next) 
+            {
                 cur = cur->next;
             }
-            /* cur->next is tail */
+            //cur->next is tail
             free(cur->next);
             cur->next = NULL;
             game->tail = cur;
@@ -223,7 +298,17 @@ int main()
 
     map_generate(game);
     map_print();
+    /* set terminal to non-canonical mode so we can read keys without blocking */
+    init_input_mode();
 
+    /* register signal handlers to restore terminal on interruption */
+    struct sigaction sa;
+    sa.sa_handler = handle_signal;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+    sigaction(SIGALRM, &sa, NULL);
     while(game->flag==1)
     {
         update(game);
