@@ -1,6 +1,5 @@
 *.aux
 *.fls
-*.pdf
 *.tex
 *.fdb_latexmk
 *.log
