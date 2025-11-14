@@ -7,6 +7,12 @@
 #include<stdlib.h>
 #include<time.h>
 
+#define HEIGHT 22
+#define WIDTH 22
+
+char map[HEIGHT][WIDTH];
+
+
 /* terminal input handling: switch to non-canonical, no-echo mode */
 static struct termios orig_termios;
 static int input_mode_inited = 0;
@@ -49,9 +55,6 @@ void handle_signal(int sig)
     _exit(128 + sig);
 }
 
-//data
-char map[12][12];
-
 typedef struct snake
 {
     int x;
@@ -78,8 +81,8 @@ void food_generate(status* game)
     snake* current;
     while(is_empty==0)
     {
-        food_x=rand()%10+1;
-        food_y=rand()%10+1;
+        food_x=rand()%(WIDTH-2)+1;
+        food_y=rand()%(HEIGHT-2)+1;
         is_empty=1;
         current = game->head;
         while(current!=NULL)
@@ -106,9 +109,9 @@ void map_print()
     const char *home = "\x1b[H"; /* ANSI: cursor home */
     write(STDOUT_FILENO, home, 3);
 
-    for(int i=0;i<12;i++)
+    for(int i=0;i<HEIGHT;i++)
     {
-        for(int j=0;j<12;j++)
+        for(int j=0;j<WIDTH;j++)
         {
             printf("%c",map[i][j]);
         }
@@ -142,13 +145,11 @@ void restore_screen(void)
 
 void map_init()
 {
-    // 初始化地图
-    for(int i = 0; i < 12; i++)
+    for(int i = 0; i <HEIGHT; i++)
     {
-        for(int j = 0; j < 12; j++)
+        for(int j = 0; j < WIDTH; j++)
         {
-            // 设置边界为墙，内部为空地
-            if(i == 0 || i == 11 || j == 0 || j == 11)
+            if(i == 0 || i == WIDTH-1 || j == 0 || j == HEIGHT-1)
                 map[i][j] = '#';
             else
                 map[i][j] = ' ';
@@ -248,11 +249,11 @@ void update(status* game)
 
     //detect alive (valid playable coords are 1..10)
     int alive=1;
-    if(x>=11 || x<=0)
+    if(x>=WIDTH-1 || x<=0)
     {
         alive=0;
     }
-    if(y>=11 || y<=0)
+    if(y>=HEIGHT-1|| y<=0)
     {
         alive=0;
     }
@@ -313,8 +314,8 @@ int main()
 
     game->direction='w';
     game->flag=1;
-    game->food_x = rand()%10+1;
-    game->food_y = rand()%10+1;
+    game->food_x = rand()%(WIDTH-2)+1;
+    game->food_y = rand()%(HEIGHT-2)+1;
 
     /* create initial head */
     game->head = malloc(sizeof(snake));
